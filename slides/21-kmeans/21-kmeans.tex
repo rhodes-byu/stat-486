@@ -1,0 +1,552 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usetheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\graphicspath{{master/figures/}{figures/}}
+
+\definecolor{kmblue}{RGB}{30,78,121}
+\definecolor{kmgold}{RGB}{193,148,37}
+\definecolor{kmslate}{RGB}{59,70,84}
+\definecolor{kmlight}{RGB}{240,244,248}
+
+\setbeamercolor{title}{fg=white,bg=kmblue}
+\setbeamercolor{frametitle}{fg=white,bg=kmblue}
+\setbeamercolor{structure}{fg=kmblue}
+\setbeamercolor{block title}{fg=white,bg=kmblue}
+\setbeamercolor{block body}{fg=black,bg=kmlight}
+\setbeamercolor{normal text}{fg=black,bg=white}
+\setbeamercolor{itemize item}{fg=kmgold}
+\setbeamercolor{itemize subitem}{fg=kmgold}
+\setbeamerfont{title}{series=\bfseries,size=\LARGE}
+\setbeamerfont{frametitle}{series=\bfseries,size=\large}
+
+\title{K-Means Clustering}
+\subtitle{From intuition to objective functions and model selection}
+\author{}
+% \date{March 27, 2026}
+
+\newcommand{\wcss}{\mathrm{WCSS}}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+  \vspace{-0.5em}
+  \begin{center}
+    % \includegraphics[
+    %   width=0.48\linewidth,
+    %   height=0.32\textheight,
+    %   keepaspectratio
+    % ]{intro_clustering_overview.jpg}
+  \end{center}
+\end{frame}
+
+\begin{frame}[t]{Why We Cluster}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.38\textwidth}
+      \begin{itemize}
+        \item Clustering is \textbf{unsupervised}: we observe feature vectors, but no labels.
+        \item The goal is to create groups with high within-cluster similarity and low between-cluster similarity.
+        \item Common use cases include customer segmentation, document organization, image grouping, social network analysis, and genomics.
+      \end{itemize}
+      \vspace{0.35em}
+      \[
+        \text{No labels} \Longrightarrow \text{discover structure from geometry alone}
+      \]
+    \column{0.58\textwidth}
+      \begin{center}
+        \includegraphics[
+          width=\linewidth,
+          height=0.60\textheight,
+          keepaspectratio
+        ]{intro_clustering_overview.jpg}
+      \end{center}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Clustering Shows Up in Many Domains}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.54\textwidth}
+      \begin{center}
+        \textbf{Documents and networks}
+
+        \vspace{0.3em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.56\textheight,
+          keepaspectratio
+        ]{domain_documents_networks.jpg}
+      \end{center}
+    \column{0.42\textwidth}
+      \begin{center}
+        \textbf{Images and visual categories}
+
+        \vspace{0.3em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.56\textheight,
+          keepaspectratio
+        ]{domain_visual_categories.jpg}
+      \end{center}
+  \end{columns}
+  \begin{itemize}
+    \item The objects being clustered can be customers, articles, images, genes, or users in a network.
+    \item K-means is one way to turn those feature vectors into coherent groups.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Representative Applications of Clustering}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.48\textwidth}
+      \begin{itemize}
+        \item \textbf{Customer segmentation}: group customers by behavior, preferences, or demographics.
+        \item \textbf{Document clustering}: organize large text corpora into coherent topics.
+        \item \textbf{Anomaly detection}: identify unusual behavior that may indicate fraud or cyberattacks.
+      \end{itemize}
+    \column{0.48\textwidth}
+      \begin{itemize}
+        \item \textbf{Social network analysis}: find communities with similar links or interests.
+        \item \textbf{Genomics}: discover genes with similar expression patterns.
+        \item \textbf{Urban planning}: group regions with similar land use, demographics, or crime patterns.
+      \end{itemize}
+  \end{columns}
+
+  \vspace{0.6em}
+  \begin{block}{Why this matters}
+    Clustering is useful whenever we want structure without labels: find groups, summarize populations, or flag unusual points.
+  \end{block}
+\end{frame}
+
+\begin{frame}[t]{What K-Means Produces}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.48\textwidth}
+      \begin{center}
+        \textbf{Before}
+
+        \includegraphics[width=\linewidth,height=0.58\textheight,keepaspectratio]{kmeans_before.png}
+      \end{center}
+    \column{0.48\textwidth}
+      \begin{center}
+        \textbf{After}
+
+        \includegraphics[width=\linewidth,height=0.58\textheight,keepaspectratio]{kmeans_after.png}
+      \end{center}
+  \end{columns}
+  \vspace{0.25em}
+  \begin{itemize}
+    \item The algorithm assigns every point to exactly one cluster and summarizes each cluster by its center.
+    \item The only thing it sees is distance, so the choice of features and scaling matters.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{The Optimization Problem}
+  \begin{block}{K-means objective}
+    \[
+      W(\mathcal C,\mu_1,\ldots,\mu_k)
+      =
+      \sum_{\ell=1}^{k}\;\sum_{i:C(i)=\ell}\left\lVert x_i-\mu_\ell\right\rVert^2
+    \]
+  \end{block}
+
+  \begin{itemize}
+    \item $\mathcal C$ is the cluster assignment map and $\mu_\ell$ is the centroid of cluster $\ell$.
+    \item Minimizing squared Euclidean distances makes clusters \textbf{compact} around their centers.
+    \item For a fixed assignment, the best centroid is the sample mean:
+  \end{itemize}
+
+  \[
+    \mu_\ell
+    =
+    \frac{1}{n_\ell}\sum_{j:C(j)=\ell} x_j,
+    \qquad
+    n_\ell = \#\{i : C(i)=\ell\}.
+  \]
+  \begin{itemize}
+    \item This quantity is also called the \textbf{within-cluster scatter} or \textbf{WCSS}.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Why the Mean Appears}
+  \[
+    \mu_\ell^\star
+    =
+    \arg\min_{m \in \mathbb R^d}
+    \sum_{i:C(i)=\ell}\left\lVert x_i-m\right\rVert^2
+    =
+    \frac{1}{n_\ell}\sum_{i:C(i)=\ell}x_i
+  \]
+
+  \vspace{-0.25em}
+  \begin{block}{Interpretation}
+    With squared distance, the center that minimizes total within-cluster error is the arithmetic mean. That is why the algorithm is called \textbf{k-means}.
+  \end{block}
+
+  \begin{itemize}
+    \item Assignment step: keep the centroids fixed and send each point to its nearest center.
+    \item Update step: keep the assignments fixed and recompute each center as the mean of its assigned points.
+    \item Each step decreases the objective, so the algorithm moves downhill until it reaches a local optimum.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Why We Need an Iterative Heuristic}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.53\textwidth}
+      \begin{itemize}
+        \item Searching over \emph{all} possible clusterings is combinatorial.
+        \item The number of ways to partition $n$ points into $k$ nonempty clusters is the Stirling number:
+      \end{itemize}
+      \[
+        S(n,k)=\frac{1}{k!}\sum_{\ell=1}^{k}(-1)^{k-\ell}\binom{k}{\ell}\ell^n
+      \]
+      \begin{itemize}
+        \item For example, $S(10,4)=34105$ and $S(19,4)\approx 10^{10}$.
+        \item Exhaustive optimization is unrealistic, so we use a fast greedy procedure instead.
+      \end{itemize}
+    \column{0.43\textwidth}
+      \begin{block}{Lloyd's algorithm}
+        \[
+          C(i) \leftarrow \arg\min_{\ell}\lVert x_i-\mu_\ell\rVert^2
+        \]
+        \[
+          \mu_\ell \leftarrow \frac{1}{n_\ell}\sum_{j:C(j)=\ell}x_j
+        \]
+      \end{block}
+
+      \begin{itemize}
+        \item Initialize $k$ centroids.
+        \item Alternate assignment and update.
+        \item Stop when assignments no longer change.
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{A Concrete Run of Lloyd's Algorithm}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.48\textwidth}
+      \begin{center}
+        \textbf{1. Choose \(k=4\)}
+
+        \vspace{0.35em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.56\textheight,
+          keepaspectratio
+        ]{lloyd_choose_k.png}
+      \end{center}
+    \column{0.48\textwidth}
+      \begin{center}
+        \textbf{2. Randomly initialize centroids}
+
+        \vspace{0.35em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.56\textheight,
+          keepaspectratio
+        ]{lloyd_random_init.png}
+      \end{center}
+  \end{columns}
+  \begin{itemize}
+    \item We start with a chosen value of \(k\) and an initial guess for the \(k\) centers.
+    \item From here, the algorithm alternates between assignment and update.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Iteration 1: Assign Every Point to Its Closest Center}
+  \begin{center}
+    \includegraphics[
+      width=0.84\linewidth,
+      height=0.68\textheight,
+      keepaspectratio
+    ]{lloyd_assign_step1.png}
+  \end{center}
+  \begin{itemize}
+    \item Each point is assigned to the nearest current centroid.
+    \item This creates a provisional partition of the data.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Iteration 1: Recompute the Centroids}
+  \begin{center}
+    \includegraphics[
+      width=0.84\linewidth,
+      height=0.68\textheight,
+      keepaspectratio
+    ]{lloyd_update_step1.png}
+  \end{center}
+  \begin{itemize}
+    \item Each centroid moves to the mean of the points currently assigned to it.
+    \item In the plot, the red outlined markers show the newly computed centers.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{The Reassignment-Update Loop}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.48\textwidth}
+      \begin{center}
+        \textbf{Another assignment step}
+
+        \vspace{0.25em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.27\textheight,
+          keepaspectratio
+        ]{lloyd_assign_step2.png}
+
+        \vspace{0.5em}
+        \textbf{Near convergence}
+
+        \vspace{0.25em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.27\textheight,
+          keepaspectratio
+        ]{lloyd_near_convergence.png}
+      \end{center}
+    \column{0.48\textwidth}
+      \begin{center}
+        \textbf{The following update}
+
+        \vspace{0.25em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.27\textheight,
+          keepaspectratio
+        ]{lloyd_update_step2.png}
+
+        \vspace{0.5em}
+        \textbf{The final update}
+
+        \vspace{0.25em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.27\textheight,
+          keepaspectratio
+        ]{lloyd_final_update.png}
+      \end{center}
+  \end{columns}
+  \begin{itemize}
+    \item Early on, assignments and centers can move a lot.
+    \item As the algorithm settles, each update becomes smaller.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Convergence}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.48\textwidth}
+      \begin{center}
+        \textbf{Stop when the centers no longer move}
+
+        \vspace{0.35em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.52\textheight,
+          keepaspectratio
+        ]{lloyd_final_update.png}
+      \end{center}
+    \column{0.48\textwidth}
+      \begin{center}
+        \textbf{Final cluster assignment}
+
+        \vspace{0.35em}
+        \includegraphics[
+          width=\linewidth,
+          height=0.52\textheight,
+          keepaspectratio
+        ]{lloyd_final_assignment.png}
+      \end{center}
+  \end{columns}
+  \begin{itemize}
+    \item Once the updated centers match the current centers, the algorithm has converged.
+    \item The result is a locally optimal partition for this initialization.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Initialization Matters}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.38\textwidth}
+      \begin{center}
+        \textbf{Different random starts can lead to different answers}
+
+        \vspace{0.5em}
+        \includegraphics[width=0.98\linewidth,height=0.20\textheight,keepaspectratio]{init_different_start_1.png}
+
+        \vspace{0.5em}
+        \includegraphics[width=0.98\linewidth,height=0.20\textheight,keepaspectratio]{init_different_start_2.png}
+      \end{center}
+    \column{0.58\textwidth}
+      \small
+      \begin{itemize}
+        \item K-means converges to a \textbf{local} optimum, so different starts can produce different partitions.
+        \item A common fix is to run the algorithm many times and keep the best objective value.
+        \item Intuition: if one region already has a center, we want the next center to land in a region that is still far away.
+      \end{itemize}
+
+      \begin{block}{k-means++ idea}
+        \scriptsize
+        Pick the first center uniformly. For each candidate point $x$, define
+        $D(x)=\min_{j\in\{1,\ldots,i\}}\lVert x-m_j\rVert$,
+        where $m_1,\ldots,m_i$ are the $i$ centers already chosen.
+
+        So $D(x)$ is the distance from $x$ to its nearest chosen center, and the next center is sampled with
+        $\Pr(x \text{ is chosen next}) \propto D^2(x)$.
+
+        Points far from the current centers are therefore more likely to start a new cluster.
+      \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Cluster Geometry}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.46\textwidth}
+      \includegraphics[width=\linewidth,height=0.48\textheight,keepaspectratio]{cluster_geometry_voronoi.png}
+    \column{0.50\textwidth}
+      \includegraphics[width=\linewidth,height=0.48\textheight,keepaspectratio]{cluster_geometry_nonconvex.png}
+  \end{columns}
+  \vspace{0.35em}
+  \begin{itemize}
+    \item With fixed centroids, k-means partitions the space into \textbf{Voronoi cells}: every point goes to its nearest center.
+    \item Boundaries are piecewise linear, so clusters tend to be convex and roughly spherical in Euclidean space.
+    \item That geometry makes elongated, imbalanced, and non-convex shapes harder to recover.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{When K-Means Works and When It Fails}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.47\textwidth}
+      \begin{block}{Works well when}
+        \small
+        \begin{itemize}
+          \item clusters are compact and reasonably separated
+          \item Euclidean distance is meaningful
+          \item features are standardized and on comparable scales
+          \item you want a fast baseline or preprocessing step
+        \end{itemize}
+      \end{block}
+    \column{0.47\textwidth}
+      \begin{block}{Struggles when}
+        \small
+        \begin{itemize}
+          \item clusters are non-convex or have very different sizes
+          \item there are strong outliers
+          \item the true structure is density-based rather than centroid-based
+          \item the value of $k$ is poorly chosen
+        \end{itemize}
+      \end{block}
+  \end{columns}
+  \vspace{0.15em}
+  \begin{center}
+    \includegraphics[width=0.68\linewidth,height=0.28\textheight,keepaspectratio]{kmeans_failure_example.jpg}
+  \end{center}
+\end{frame}
+
+\begin{frame}[t]{Choosing \texorpdfstring{$k$}{k} with WCSS and the Elbow Method}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.34\textwidth}
+      \[
+        \wcss
+        =
+        \sum_{j=1}^{K}\;\sum_{x_i\in C_j}\left\lVert x_i-\mu_j\right\rVert^2
+      \]
+      \small
+      \begin{itemize}
+        \item Smaller WCSS means tighter clusters.
+        \item WCSS always decreases as $K$ increases.
+        \item The elbow is where extra clusters give only a small additional improvement.
+        \item The bend is a reasonable place to stop adding clusters.
+      \end{itemize}
+    \column{0.62\textwidth}
+      \begin{center}
+        \includegraphics[width=\linewidth,height=0.56\textheight,keepaspectratio]{elbow_method_plot.png}
+      \end{center}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Choosing \texorpdfstring{$k$}{k} with Silhouette Scores}
+  \begin{center}
+    \begin{minipage}{0.80\textwidth}
+      \footnotesize
+      \[
+        a(i)=\frac{1}{|C|-1}\sum_{x_j\in C,\;j\neq i} d(x_i,x_j)
+      \]
+      \[
+        b(i)=\min_{C'\neq C}\frac{1}{|C'|}\sum_{x_j\in C'}d(x_i,x_j)
+      \]
+      \[
+        s(i)=\frac{b(i)-a(i)}{\max\{a(i),b(i)\}},
+        \qquad
+        S=\frac{1}{n}\sum_{i=1}^{n}s(i)
+      \]
+      \begin{itemize}
+        \item $a(i)$ measures cohesion inside the assigned cluster.
+        \item $b(i)$ measures separation from the nearest competing cluster.
+        \item $s(i)\approx 1$: the point is well matched to its own cluster.
+        \item $s(i)\approx 0$: the point lies near a boundary between clusters.
+        \item $s(i)<0$: the point may fit better in a different cluster.
+      \end{itemize}
+      \begin{center}
+        Larger average silhouette means the clustering has both tighter groups and better separation between them.
+      \end{center}
+    \end{minipage}
+  \end{center}
+\end{frame}
+
+\begin{frame}[t]{Using WCSS and Silhouette Together}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.48\textwidth}
+      \begin{block}{WCSS}
+        \begin{itemize}
+          \item Measures \textbf{compactness} inside each cluster.
+          \item Great for elbow plots and fast screening of candidate $k$ values.
+          \item Limitation: it ignores separation between different clusters.
+        \end{itemize}
+      \end{block}
+    \column{0.48\textwidth}
+      \begin{block}{Silhouette}
+        \begin{itemize}
+          \item Measures \textbf{compactness plus separation}.
+          \item Great for comparing cluster quality more directly.
+          \item Limitation: it is more computationally expensive.
+        \end{itemize}
+      \end{block}
+  \end{columns}
+
+  \begin{itemize}
+    \item In practice, start with WCSS to narrow the range of plausible $k$ values.
+    \item Then use silhouette plots, domain knowledge, and visual inspection to decide whether the clusters are actually meaningful.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Interpreting the Clusters}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.35\textwidth}
+      \footnotesize
+      \begin{itemize}
+        \item K-means gives \textbf{partitions}, not semantic labels. Interpretation still requires subject-matter judgment.
+        \item Inspecting cluster centroids often reveals the dominant profile of each group.
+        \item In high dimensions, visualization often uses PCA, t-SNE, or UMAP after clustering.
+        \item A good workflow is to standardize features, compare several $k$ values, inspect centroids and example members, then validate with domain knowledge.
+      \end{itemize}
+    \column{0.61\textwidth}
+      \begin{center}
+        \includegraphics[width=\linewidth,height=0.78\textheight,keepaspectratio]{domain_visual_categories.jpg}
+      \end{center}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Takeaways}
+  \begin{itemize}
+    \item K-means is simple and fast because it alternates between assignment and least-squares centroid updates.
+    \item Its objective is to minimize within-cluster squared distances to the centroids.
+    \item Its Euclidean geometry favors compact, convex groups.
+    \item Initialization and model selection matter, which is why k-means++ and validation tools are so important.
+    \item Use it as a strong baseline, then move beyond it when the data violate its assumptions.
+  \end{itemize}
+\end{frame}
+
+\end{document}
