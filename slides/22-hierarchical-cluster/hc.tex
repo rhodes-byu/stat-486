@@ -1,0 +1,598 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usetheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\graphicspath{{master/figures/}{figures/}}
+
+\definecolor{hcblue}{RGB}{30,78,121}
+\definecolor{hcgold}{RGB}{193,148,37}
+\definecolor{hcslate}{RGB}{59,70,84}
+\definecolor{hclight}{RGB}{240,244,248}
+
+\setbeamercolor{title}{fg=white,bg=hcblue}
+\setbeamercolor{frametitle}{fg=white,bg=hcblue}
+\setbeamercolor{structure}{fg=hcblue}
+\setbeamercolor{block title}{fg=white,bg=hcblue}
+\setbeamercolor{block body}{fg=black,bg=hclight}
+\setbeamercolor{normal text}{fg=black,bg=white}
+\setbeamercolor{itemize item}{fg=hcgold}
+\setbeamercolor{itemize subitem}{fg=hcgold}
+\setbeamerfont{title}{series=\bfseries,size=\LARGE}
+\setbeamerfont{frametitle}{series=\bfseries,size=\large}
+
+\title{Hierarchical Clustering}
+\subtitle{Intuition, dendrograms, linkage, and the mathematics of greedy merges}
+\author{}
+% \date{March 31, 2026}
+
+\newcommand{\ESS}{\mathrm{ESS}}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \titlepage
+\end{frame}
+
+\begin{frame}[t]{Why Hierarchical Clustering?}
+  \small
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.48\textwidth}
+      \begin{itemize}
+        \item Hierarchical clustering is \textbf{unsupervised} and \textbf{connectivity-based}.
+        \item It builds a \textbf{nested family of clusters}, not just one partition.
+        \item We do \emph{not} need to pick one value of $K$ up front.
+        \item The raw ingredients are observations plus a dissimilarity:
+        \[
+          \text{observations} \;+\; \text{a dissimilarity } d(x_i,x_j).
+        \]
+        \item Nearby points merge low in the tree; distant groups only merge high up.
+      \end{itemize}
+    \column{0.48\textwidth}
+      \begin{center}
+        \includegraphics[
+          width=\linewidth,
+          height=0.52\textheight,
+          keepaspectratio
+        ]{agglomerative_vs_divisive.jpeg}
+      \end{center}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Agglomerative Versus Divisive}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.47\textwidth}
+      \begin{block}{Agglomerative}
+        \begin{itemize}
+          \item Bottom-up
+          \item Start with $n$ singleton clusters
+          \item Repeatedly merge the two closest clusters
+          \item Most common form in practice
+        \end{itemize}
+      \end{block}
+
+      \[
+        \text{singletons}
+        \;\longrightarrow\;
+        \text{larger and larger groups}
+      \]
+    \column{0.47\textwidth}
+      \begin{block}{Divisive}
+        \begin{itemize}
+          \item Top-down
+          \item Start with one large cluster containing every point
+          \item Repeatedly split a cluster into smaller pieces
+          \item Conceptually natural, but less common in standard software
+        \end{itemize}
+      \end{block}
+
+      \[
+        \text{one big cluster}
+        \;\longrightarrow\;
+        \text{finer and finer groups}
+      \]
+  \end{columns}
+
+  \vspace{0.35em}
+  \begin{itemize}
+    \item In this deck, ``hierarchical clustering'' means \textbf{agglomerative hierarchical clustering} unless stated otherwise.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{How to Read a Dendrogram}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.50\textwidth}
+      \begin{center}
+        \includegraphics[
+          width=\linewidth,
+          height=0.63\textheight,
+          keepaspectratio
+        ]{dendrogram_parts.png}
+
+        \vspace{0.25em}
+        \scriptsize Adapted from \texttt{refs/10-hierarchical-clustering.pptx}
+      \end{center}
+    \column{0.46\textwidth}
+      \begin{itemize}
+        \item Each \textbf{leaf} is one observation.
+        \item A horizontal \textbf{link} marks the moment when two clusters merge.
+        \item The \textbf{height} of that link is the dissimilarity at which the merge happened.
+        \item Clusters that join low in the tree are more similar than clusters that join high in the tree.
+      \end{itemize}
+
+      \begin{block}{Interpretation}
+        The vertical axis matters much more than the horizontal ordering of the leaves.
+      \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Interpreting Dendrograms Carefully}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.52\textwidth}
+      \begin{center}
+        \includegraphics[
+          width=\linewidth,
+          height=0.52\textheight,
+          keepaspectratio
+        ]{islp_dendrogram_interpretation.png}
+
+        \vspace{0.25em}
+        \scriptsize Adapted from \texttt{quizzes/book-snips/ISLP-12.4-Clustering.pdf}
+      \end{center}
+    \column{0.44\textwidth}
+      \small
+      \begin{itemize}
+        \item The \textbf{height} of a merge is meaningful; the left-to-right ordering of leaves usually is not.
+        \item A point may sit horizontally near another point in the dendrogram but still merge with it at a much larger height.
+        \item Always connect the dendrogram back to the original feature space or distance matrix before making a story out of it.
+      \end{itemize}
+
+      \begin{block}{Rule of thumb}
+        Read dendrograms vertically, not horizontally.
+      \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Agglomerative Clustering Algorithm}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.48\textwidth}
+      \scriptsize
+      Start with a pairwise dissimilarity matrix
+      \[
+        D^{(0)}_{ij}=d(x_i,x_j), \qquad D^{(0)}_{ii}=0.
+      \]
+
+      \begin{block}{Greedy merge rule}
+        At step $t$, choose
+        \[
+          (A_t,B_t)
+          =
+          \arg\min_{A\neq B} d_{\text{link}}(A,B),
+        \]
+        merge them, and record the merge height
+        \[
+          h_t = d_{\text{link}}(A_t,B_t).
+        \]
+      \end{block}
+
+      Initialize with $n$ singleton clusters, repeatedly merge and update, and stop when one cluster remains.
+
+      \vspace{0.4em}
+      The method is \textbf{greedy}: once two clusters merge, that choice cannot be undone.
+    \column{0.48\textwidth}
+      \begin{center}
+        \includegraphics[
+          width=\linewidth,
+          height=0.54\textheight,
+          keepaspectratio
+        ]{hc_first_steps_complete_linkage.png}
+      \end{center}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{The Proximity Matrix Drives the Merges}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.50\textwidth}
+      \footnotesize
+      For observations $x_1,\ldots,x_n$, start with the pairwise dissimilarity matrix
+      \[
+        D=(d_{ij})_{i,j=1}^n,
+        \qquad
+        d_{ij}=d(x_i,x_j).
+      \]
+
+      \[
+      D=
+      \begin{bmatrix}
+      0 & d_{12} & \cdots & d_{1n}\\
+      d_{21} & 0 & \cdots & d_{2n}\\
+      \vdots & \vdots & \ddots & \vdots\\
+      d_{n1} & d_{n2} & \cdots & 0
+      \end{bmatrix}
+      \]
+
+      \begin{itemize}
+        \item It is symmetric when $d(x_i,x_j)=d(x_j,x_i)$.
+        \item Diagonal entries are $0$ because each point has zero distance from itself.
+      \end{itemize}
+    \column{0.45\textwidth}
+      \footnotesize
+      \begin{block}{What changes after a merge?}
+        If $A$ and $B$ merge into $A\cup B$, then every remaining cluster $C$ needs a new distance
+        \[
+          d_{\text{link}}(A\cup B, C).
+        \]
+      \end{block}
+
+      \begin{itemize}
+        \item After each merge, two rows/columns are replaced by one for the merged cluster.
+        \item Single linkage uses the closest cross-cluster pair.
+        \item Complete linkage uses the farthest cross-cluster pair.
+        \item Average linkage uses the mean cross-cluster distance.
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{The Key Mathematical Choice: Linkage}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.52\textwidth}
+      \small
+      For clusters $A$ and $B$, the linkage function defines their distance:
+
+      \[
+        d_{\text{single}}(A,B)
+        =
+        \min_{i\in A,\;j\in B} d(x_i,x_j)
+      \]
+      \[
+        d_{\text{complete}}(A,B)
+        =
+        \max_{i\in A,\;j\in B} d(x_i,x_j)
+      \]
+      \[
+        d_{\text{average}}(A,B)
+        =
+        \frac{1}{|A||B|}
+        \sum_{i\in A}\sum_{j\in B} d(x_i,x_j)
+      \]
+      \[
+        d_{\text{centroid}}(A,B)
+        =
+        \|\bar x_A-\bar x_B\|_2
+      \]
+      \[
+        d_{\text{Ward}}(A,B)
+        =
+        \ESS(A\cup B)-\ESS(A)-\ESS(B)
+      \]
+    \column{0.44\textwidth}
+      \begin{center}
+        \includegraphics[
+          width=\linewidth,
+          height=0.72\textheight,
+          keepaspectratio
+        ]{linkage_methods_overview.png}
+
+        \vspace{0.25em}
+        \scriptsize Adapted from \texttt{refs/10-hierarchical-clustering.pptx}
+      \end{center}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Ward's Linkage: The Intuition}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.54\textwidth}
+      \small
+      Ward's method does \textbf{not} ask which two clusters have the smallest point-to-point distance.
+      Instead, it asks:
+
+      \vspace{0.4em}
+      \begin{block}{Guiding question}
+        If we merge clusters $A$ and $B$, how much more \textbf{spread out} will the data become?
+      \end{block}
+
+      \begin{itemize}
+        \item A good merge should keep the new cluster \textbf{tight and compact}.
+        \item A bad merge would glue together groups that create a large, diffuse cloud.
+        \item So Ward picks the pair whose merge causes the \textbf{smallest increase} in within-cluster variation.
+      \end{itemize}
+
+      \[
+        \Delta(A,B)=\ESS(A\cup B)-\ESS(A)-\ESS(B)
+      \]
+    \column{0.40\textwidth}
+      \scriptsize
+      \begin{block}{Compared with other linkage rules}
+        \begin{itemize}
+          \item \textbf{Single}: nearest pair.
+          \item \textbf{Complete}: farthest pair.
+          \item \textbf{Average}: mean pairwise distance.
+          \item \textbf{Ward}: the \textbf{whole cluster geometry}.
+        \end{itemize}
+      \end{block}
+
+      \begin{block}{Practical effect}
+        Ward often avoids chaining and tends to prefer rounder, more balanced clusters.
+      \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{A Tiny Worked Example of Linkage Values}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.47\textwidth}
+      \footnotesize
+      Suppose we have two clusters on the real line:
+      \[
+        A=\{0,2\}, \qquad B=\{5,6\}.
+      \]
+      The cross-cluster distances are
+      \[
+        5,\;6,\;3,\;4.
+      \]
+
+      \begin{block}{Linkage values}
+        \[
+          d_{\text{single}}(A,B)=3
+        \]
+        \[
+          d_{\text{complete}}(A,B)=6
+        \]
+        \[
+          d_{\text{average}}(A,B)=\frac{5+6+3+4}{4}=4.5
+        \]
+        \[
+          d_{\text{centroid}}(A,B)=|1-5.5|=4.5
+        \]
+      \end{block}
+    \column{0.49\textwidth}
+      \footnotesize
+      For Ward linkage,
+      \[
+        \bar x_A = 1, \qquad \bar x_B = 5.5.
+      \]
+      Using the Euclidean simplification,
+      \[
+        \Delta(A,B)
+        =
+        \frac{|A||B|}{|A|+|B|}
+        \|\bar x_A-\bar x_B\|_2^2
+        =
+        \frac{2\cdot 2}{4}(4.5)^2
+        =
+        20.25.
+      \]
+
+      \begin{block}{Takeaway}
+        The \emph{same two clusters} can look close or far apart depending on the linkage rule, which is why linkage choice strongly affects the dendrogram.
+      \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Distance Choice Matters Too}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.47\textwidth}
+      \begin{block}{If scales differ, standardize first}
+        \[
+          z_{ij}
+          =
+          \frac{x_{ij}-\bar x_j}{s_j}
+        \]
+      \end{block}
+
+      \begin{itemize}
+        \item Otherwise, variables with large units can dominate the distance calculation.
+        \item A spending variable measured in dollars can overwhelm an age variable measured in years.
+        \item Standardization makes each feature contribute on a comparable scale.
+      \end{itemize}
+    \column{0.47\textwidth}
+      \begin{block}{Pick the dissimilarity to match the question}
+        \[
+          d_{\text{Euclidean}}(x_i,x_j)
+          =
+          \|x_i-x_j\|_2
+        \]
+        \[
+          d_{\text{corr}}(x_i,x_j)
+          =
+          1-\mathrm{corr}(x_i,x_j)
+        \]
+      \end{block}
+
+      \begin{itemize}
+        \item Euclidean distance emphasizes absolute magnitude.
+        \item Correlation-based distance emphasizes \textbf{shape} or profile similarity.
+        \item The right distance depends on the scientific goal, not just convenience.
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Ward Linkage: The Objective Function}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.54\textwidth}
+      \footnotesize
+      \begin{block}{Within-cluster error}
+        \[
+          \ESS(C)
+          =
+          \sum_{i\in C}\|x_i-\bar x_C\|_2^2
+        \]
+        \[
+          \bar x_C = \frac{1}{|C|}\sum_{i\in C}x_i
+        \]
+      \end{block}
+
+      Ward linkage merges the pair that yields the \textbf{smallest increase} in total within-cluster sum of squares:
+      \[
+        \Delta(A,B)
+        =
+        \ESS(A\cup B)-\ESS(A)-\ESS(B).
+      \]
+      For Euclidean distance, this simplifies to
+      \[
+        \Delta(A,B)
+        =
+        \frac{|A||B|}{|A|+|B|}
+        \|\bar x_A-\bar x_B\|_2^2.
+      \]
+      Small centroid gaps and balanced sizes make a merge attractive.
+    \column{0.40\textwidth}
+      \begin{block}{Interpretation}
+        \begin{itemize}
+          \item Ward is a greedy least-squares method.
+          \item It often prefers compact, roughly spherical clusters.
+          \item This makes it feel like a hierarchical cousin of $k$-means.
+        \end{itemize}
+      \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Ward Linkage: Visual Intuition}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.58\textwidth}
+      \begin{center}
+        \includegraphics[
+          width=\linewidth,
+          height=0.60\textheight,
+          keepaspectratio
+        ]{ward_linkage_ess.png}
+      \end{center}
+    \column{0.36\textwidth}
+      \small
+      \begin{itemize}
+        \item First compute the error of the merged cluster.
+        \item Then subtract the errors of the two original clusters.
+        \item The best merge is the one with the \textbf{smallest increase} in total within-cluster variation.
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Different Linkages Can Tell Very Different Stories}
+  \small
+  \begin{center}
+    \includegraphics[
+      width=0.92\linewidth,
+      height=0.58\textheight,
+      keepaspectratio
+    ]{linkage_impact_examples.png}
+  \end{center}
+  \begin{itemize}
+    \item \textbf{Single linkage} can recover non-convex shapes, but it is prone to \emph{chaining}.
+    \item \textbf{Complete} and \textbf{average linkage} usually create more balanced dendrograms.
+    \item \textbf{Ward linkage} often behaves like a hierarchical cousin of $k$-means: it likes compact groups.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[t]{Cutting the Dendrogram Gives a Clustering}
+  \small
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.43\textwidth}
+      \small
+      Choose a height $h$ and remove every merge above that level. The remaining connected components define the clusters:
+      \[
+        \mathcal C_h
+        =
+        \{\text{connected components below height } h\}.
+      \]
+
+      \begin{itemize}
+        \item Higher cut $\Rightarrow$ fewer clusters.
+        \item Lower cut $\Rightarrow$ more clusters.
+        \item In practice, we look for a large vertical gap before making the cut.
+      \end{itemize}
+      \emph{$K$-means chooses $K$ first; hierarchical clustering builds the whole tree first and chooses $K$ by the cut.}
+    \column{0.53\textwidth}
+      \begin{center}
+        \includegraphics[
+          width=\linewidth,
+          height=0.50\textheight,
+          keepaspectratio
+        ]{dendrogram_cut_levels.png}
+      \end{center}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{Important Caveats from ISLP}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.47\textwidth}
+      \begin{block}{Nested clusters are an assumption}
+        Cutting a dendrogram at height $h_1$ and then at a lower height $h_2$ always produces nested groups.
+      \end{block}
+
+      \begin{itemize}
+        \item That nested structure is a property of the algorithm, not proof that the data are truly hierarchical.
+        \item In some data sets, the best 2-group split and best 3-group split may not be consistent with one another.
+      \end{itemize}
+    \column{0.47\textwidth}
+      \begin{block}{Practical consequence}
+        Hierarchical clustering can sometimes give worse results than methods like $k$-means for a fixed number of clusters.
+      \end{block}
+
+      \begin{itemize}
+        \item Greedy early merges cannot be repaired later.
+        \item Compare several linkage and scaling choices rather than trusting a single tree blindly.
+      \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[t]{A Tempered Approach to Interpreting Clusters}
+  \begin{itemize}
+    \item Small choices can have big consequences: scaling, distance measure, and linkage can all change the result.
+    \item There is rarely a single ``correct'' clustering waiting to be discovered automatically.
+    \item A good workflow is to compare several reasonable specifications and look for patterns that recur.
+    \item If the same clusters appear across subsets of the data, that gives more confidence that the structure is robust.
+    \item Treat clustering as an \textbf{exploratory tool}: a starting point for scientific interpretation, not the last word.
+  \end{itemize}
+
+  \vspace{0.6em}
+  \begin{block}{Practical habit}
+    Use clustering to generate hypotheses and summaries, then validate those ideas with domain knowledge or new data whenever possible.
+  \end{block}
+\end{frame}
+
+\begin{frame}[t]{Strengths and Limitations}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \column{0.47\textwidth}
+      \begin{block}{Strengths}
+        \begin{itemize}
+          \item No need to choose one partition in advance
+          \item Works with many dissimilarity measures, not just Euclidean distance
+          \item Dendrograms are often easy to explain to humans
+          \item Useful for exploratory analysis and small-to-medium data sets
+        \end{itemize}
+      \end{block}
+    \column{0.47\textwidth}
+      \begin{block}{Limitations}
+        \begin{itemize}
+          \item Distances can change dramatically if variables are not scaled
+          \item Early greedy merges cannot be undone later
+          \item Results depend strongly on the choice of linkage and distance metric
+          \item Pairwise distances require about $O(n^2)$ memory
+        \end{itemize}
+      \end{block}
+  \end{columns}
+
+  \vspace{0.2em}
+  \[
+    \text{memory} \approx O(n^2),
+    \qquad
+    \text{time typically ranges from } O(n^2\log n) \text{ to } O(n^3).
+  \]
+\end{frame}
+
+\begin{frame}[t]{Takeaways}
+  \begin{itemize}
+    \item Hierarchical clustering builds a \textbf{tree of nested clusters}, not just one partition.
+    \item Agglomerative clustering is a greedy bottom-up procedure that repeatedly merges the closest clusters.
+    \item The \textbf{linkage function} is the main mathematical choice because it defines what ``closest'' means for clusters.
+    \item Distances, scaling, and linkage choices all shape the final dendrogram, so interpretation should be cautious.
+    \item Ward linkage minimizes the increase in within-cluster sum of squares, linking hierarchical clustering to least-squares ideas.
+    \item A dendrogram becomes a concrete clustering only after we choose a \textbf{cut height}.
+  \end{itemize}
+\end{frame}
+
+\end{document}
